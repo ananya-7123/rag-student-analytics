@@ -2,17 +2,18 @@ import logging
 import re
 from typing import List, Dict, Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
+from google import genai
 
 logger = logging.getLogger(__name__)
 
-# Load the embedding model globally so it doesn't reload on every function call
-try:
-    logger.info("Loading HuggingFace embedding model (all-MiniLM-L6-v2)...")
-    embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-except Exception as e:
-    logger.exception(f"Failed to load embedding model: {e}")
-    raise
+client = genai.Client()
+
+def get_embedding(text: str):
+    response = client.models.embed_content(
+        model="text-embedding-004",
+        contents=text
+    )
+    return response.embeddings[0].values
 
 def clean_text(text: str) -> str:
     """Removes excessive whitespace and PDF newline artifacts."""
@@ -59,7 +60,7 @@ def transform_data(extracted_pages: List[Dict[str, Any]], chunk_size: int = 1000
         logger.info(f"Generated {len(all_text_chunks)} text chunks. Starting batch embedding...")
 
         # Step B: Batch Embedding Phase 
-        embeddings = embedding_model.encode(all_text_chunks, batch_size=32, show_progress_bar=True).tolist()
+        embeddings = [get_embedding(chunk) for chunk in all_text_chunks]
 
         # Step C: Stitch it all together into the final payload
         transformed_chunks = []

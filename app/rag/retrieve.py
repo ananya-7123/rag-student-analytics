@@ -1,14 +1,19 @@
 import os
 import logging
 from typing import List, Dict, Any
-from sentence_transformers import SentenceTransformer
+from google import genai
 from pinecone import Pinecone
 
 logger = logging.getLogger(__name__)
 
-# Load the embedding model globally (Exactly the same one used in transform.py)
-logger.info("Initializing embedding model for real-time retrieval (all-MiniLM-L6-v2)...")
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+client = genai.Client()
+
+def get_embedding(text: str):
+    response = client.models.embed_content(
+        model="text-embedding-004",
+        contents=text
+    )
+    return response.embeddings[0].values
 
 def retrieve_context(query: str, top_k: int = 5, index_name: str = "pdf-rag-etl") -> List[Dict[str, Any]]:
     """
@@ -24,9 +29,9 @@ def retrieve_context(query: str, top_k: int = 5, index_name: str = "pdf-rag-etl"
         raise ValueError("Please set your PINECONE_API_KEY before running retrieval.")
 
     try:
-        # 2. Turn the user's text question into an array of 384 numbers
+        # 2. Turn the user's text question into a vector fingerprint
         # This is semantic translation—matching meaning, not just keywords
-        query_vector = embedding_model.encode(query).tolist()
+        query_vector = get_embedding(query)
         
         # 3. Connect to the Pinecone service and your specific index
         pc = Pinecone(api_key=api_key)
