@@ -165,7 +165,7 @@ else:
         with col1:
             if st.button("Fetch Latest Analytics Matrix", key="fetch_matrix"):
                 with st.spinner("Compiling database logs..."):
-                    res = requests.post(f"{BACKEND_URL}/analytics/topics", json={"subject": subject})
+                    res = requests.post(f"{BACKEND_URL}/analytics/topics", json={"subject": subject}, headers=headers)
                     if res.status_code == 200:
                         st.session_state.analytics_data = res.json()
                     else:

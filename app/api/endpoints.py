@@ -172,10 +172,10 @@ async def upload_documents(
 
 # --- 2. COVERAGE DASHBOARD ANALYTICS ---
 @router.get("/analytics/coverage/{subject}")
-async def get_coverage_dashboard(subject: str):
+async def get_coverage_dashboard(subject: str, current_user: dict = Depends(get_current_user)):
     logger.info(f"Fetching coverage dashboard for {subject}...")
     try:
-        cached_analytics = await db.subject_analytics.find_one({"subject": subject})
+        cached_analytics = await db.subject_analytics.find_one({"subject": subject, "user_id": str(current_user["_id"])})
         if cached_analytics:
             cached_analytics["_id"] = str(cached_analytics["_id"])
             logger.info(f"Cache hit for {subject} analytics.")
@@ -193,12 +193,12 @@ async def get_coverage_dashboard(subject: str):
 
 # --- 3. IMPORTANT TOPIC ANALYZER ---
 @router.post("/analytics/topics")
-async def analyze_important_topics(request: TopicAnalysisRequest):
+async def analyze_important_topics(request: TopicAnalysisRequest, current_user: dict = Depends(get_current_user)):
     logger.info(f"Analyzing high-yield topics for {request.subject}...")
     
     query_string = f"exam questions past papers important repeating concepts for {request.subject} pyq"
     try:
-        pyq_context = retrieve_context(query_string)
+        pyq_context = retrieve_context(query=query_string, filter={"user_id": str(current_user["_id"])})
     except Exception as e:
         logger.error(f"Pinecone retrieval failed: {e}")
         pyq_context = []
@@ -232,6 +232,7 @@ async def analyze_important_topics(request: TopicAnalysisRequest):
 
     analytics_document = {
         "subject": request.subject,
+        "user_id": str(current_user["_id"]),
         "updated_at": datetime.utcnow().isoformat(),
         "overall_coverage_percentage": 82.0, 
         "analyzed_topics": parsed_topics
@@ -239,7 +240,7 @@ async def analyze_important_topics(request: TopicAnalysisRequest):
     
     try:
         await db.subject_analytics.update_one(
-            {"subject": request.subject},
+            {"subject": request.subject, "user_id": str(current_user["_id"])},
             {"$set": analytics_document},
             upsert=True
         )
