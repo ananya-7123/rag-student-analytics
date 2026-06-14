@@ -8,7 +8,8 @@ import logging
 import uuid  
 
 # pyrefly: ignore [missing-import]
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from app.api.endpoints import get_current_user
 
 # pyrefly: ignore [missing-import]
 import uvicorn
@@ -145,7 +146,7 @@ async def run_full_etl_pipeline(file: UploadFile = File(...)):
 
 
 @app.post("/rag/query", tags=["RAG Query Layer"])
-def query_document_system(request: QueryRequest):
+def query_document_system(request: QueryRequest, current_user: dict = Depends(get_current_user)):
     """
     Accepts a natural language question, retrieves matching text vectors 
     from Pinecone, and synthesizes a grounded answer using OpenAI.
@@ -157,7 +158,12 @@ def query_document_system(request: QueryRequest):
         logger.info(f"--- INBOUND RAG QUERY: '{request.query}' ---")
         
         # 1. Step 1: Retrieve context chunks
-        retrieved_chunks = retrieve_context(query=request.query, top_k=5, index_name="pdf-rag-etl")
+        retrieved_chunks = retrieve_context(
+            query=request.query, 
+            top_k=5, 
+            index_name="pdf-rag-etl",
+            filter={"user_id": str(current_user["_id"])}
+        )
         
         if not retrieved_chunks:
             return {

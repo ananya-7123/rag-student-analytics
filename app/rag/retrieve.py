@@ -16,7 +16,7 @@ def get_embedding(text: str):
     )
     return response.embeddings[0].values
 
-def retrieve_context(query: str, top_k: int = 5, index_name: str = "pdf-rag-etl") -> List[Dict[str, Any]]:
+def retrieve_context(query: str, top_k: int = 5, index_name: str = "pdf-rag-etl", filter: dict = None) -> List[Dict[str, Any]]:
     """
     Takes a plain text question, converts it to a vector fingerprint, 
     and fetches the most relevant matching text chunks from the cloud.
@@ -39,11 +39,15 @@ def retrieve_context(query: str, top_k: int = 5, index_name: str = "pdf-rag-etl"
         index = pc.Index(index_name)
         
         # 4. Perform the mathematical similarity search in the cloud
-        search_results = index.query(
-            vector=query_vector,
-            top_k=top_k,
-            include_metadata=True  
-        )
+        query_kwargs = {
+            "vector": query_vector,
+            "top_k": top_k,
+            "include_metadata": True
+        }
+        if filter:
+            query_kwargs["filter"] = filter
+            
+        search_results = index.query(**query_kwargs)
         
         # 5. Extract the raw text and source data out of the messy database output
         retrieved_chunks = []
