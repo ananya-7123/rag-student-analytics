@@ -125,7 +125,7 @@ def safe_parse_json(raw_input, default_fallback):
 async def upload_documents(
     subject: str = Form(...),
     doc_type: str = Form(...), 
-    files: List[UploadFile] = File(...)
+    files: list[UploadFile] = File(...)
 ):
     logger.info(f"Received upload request for {subject} ({doc_type}) with {len(files)} files.")
     total_chunks = 0
