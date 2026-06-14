@@ -1,0 +1,15 @@
+# Ignore the virtual environment
+venv/
+ENV/
+env/
+
+# Ignore local environment secrets
+.env
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Ignore local databases (since we moved to MongoDB Cloud)
+*.db
