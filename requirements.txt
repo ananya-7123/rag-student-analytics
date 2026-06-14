@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 pymongo
 motor
-pinecone-client
+pinecone
 certifi
 pydantic
 passlib[bcrypt]
