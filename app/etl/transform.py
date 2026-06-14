@@ -11,7 +11,8 @@ client = genai.Client()
 def get_embedding(text: str):
     response = client.models.embed_content(
         model="gemini-embedding-001",
-        contents=text
+        contents=text,
+        config={"output_dimensionality": 384}
     )
     return response.embeddings[0].values
 
