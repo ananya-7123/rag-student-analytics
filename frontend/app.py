@@ -134,7 +134,7 @@ else:
                 data_payload = {"subject": subject, "doc_type": doc_type}
                 
                 try:
-                    response = requests.post(f"{BACKEND_URL}/upload", data=data_payload, files=files_payload)
+                    response = requests.post(f"{BACKEND_URL}/upload", data=data_payload, files=files_payload, headers=headers)
                     if response.status_code == 200:
                         st.sidebar.success("Successfully processed chunks!")
                     else:
