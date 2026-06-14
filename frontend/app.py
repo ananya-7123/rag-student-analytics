@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Student Success Analytics", layout="wide")
 
 # --- CONFIGURATION ---
-BACKEND_URL = "http://localhost:8000/api/v1"
+BACKEND_URL = "https://rag-student-analytics.onrender.com/api/v1"
 
 # Initialize login state
 if "logged_in" not in st.session_state:
