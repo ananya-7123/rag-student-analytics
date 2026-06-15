@@ -132,17 +132,22 @@ else:
     if st.sidebar.button("Process & Index"):
         if uploaded_files:    
             with st.spinner("Running ETL Pipeline..."):
-                files_payload = [("files", (f.name, f.read(), "application/pdf")) for f in uploaded_files]
-                data_payload = {"subject": subject, "doc_type": doc_type}
+                all_successful = True
+                for f in uploaded_files:
+                    files_payload = [("files", (f.name, f.read(), "application/pdf"))]
+                    data_payload = {"subject": subject, "doc_type": doc_type}
+                    
+                    try:
+                        response = requests.post(f"{BACKEND_URL}/upload", data=data_payload, files=files_payload, headers=headers)
+                        if response.status_code != 200:
+                            all_successful = False
+                            st.sidebar.error(f"Upload failed for {f.name}.")
+                    except Exception as e:
+                        all_successful = False
+                        st.sidebar.error(f"Cannot connect to backend for {f.name}: {e}")
                 
-                try:
-                    response = requests.post(f"{BACKEND_URL}/upload", data=data_payload, files=files_payload, headers=headers)
-                    if response.status_code == 200:
-                        st.sidebar.success("Successfully processed chunks!")
-                    else:
-                        st.sidebar.error("Upload failed.")
-                except Exception as e:
-                    st.sidebar.error(f"Cannot connect to backend: {e}")
+                if all_successful:
+                    st.sidebar.success("Successfully processed chunks!")
         else:
             st.sidebar.warning("Please select files first.")
 
