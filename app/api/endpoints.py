@@ -162,6 +162,24 @@ async def upload_documents(
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)
+                
+        # 3. Isolate Upload Failures for Existing User Arrays
+        try:
+            user_doc = await db["users"].find_one({"_id": current_user["_id"]})
+            if user_doc:
+                existing_docs = user_doc.get("documents", [])
+                if not isinstance(existing_docs, list):
+                    existing_docs = []
+                
+                new_doc_ref = {"filename": file.filename, "subject": subject, "doc_type": doc_type, "chunks": total_chunks}
+                existing_docs.append(new_doc_ref)
+                
+                await db["users"].update_one(
+                    {"_id": current_user["_id"]},
+                    {"$set": {"documents": existing_docs}}
+                )
+        except Exception as db_err:
+            logger.warning(f"Failed to append to user documents array (ignoring to prevent upload failure): {db_err}")
 
     logger.info(f"Successfully processed {len(files)} files. Total chunks indexed: {total_chunks}")
     return {
@@ -462,8 +480,24 @@ async def signup(request: AuthRequest):
 async def login(request: AuthRequest):
     try:
         user = await db["users"].find_one({"username": request.username})
-        if not user or not verify_password(request.password, user["hashed_password"]):
+        if not user or not verify_password(request.password, user.get("hashed_password", "")):
             raise HTTPException(status_code=401, detail="Invalid credentials")
+            
+        # 2. Schema Migration Layer: Ensure backwards compatibility for legacy profiles
+        migration_updates = {}
+        if not isinstance(user.get("documents"), list):
+            migration_updates["documents"] = []
+        if not isinstance(user.get("workspaces"), list):
+            migration_updates["workspaces"] = []
+            
+        if migration_updates:
+            try:
+                await db["users"].update_one(
+                    {"_id": user["_id"]},
+                    {"$set": migration_updates}
+                )
+            except Exception as e:
+                logger.warning(f"Migration layer update failed for {user['username']}: {e}")
             
         access_token = create_access_token(data={"sub": user["username"]})
         return {"access_token": access_token, "token_type": "bearer"}
@@ -478,7 +512,8 @@ async def login(request: AuthRequest):
 async def get_workspaces(current_user: dict = Depends(get_current_user)):
     cursor = db["workspaces"].find({"username": current_user["username"]})
     workspaces = await cursor.to_list(length=100)
-    return [ws["subject_name"] for ws in workspaces]
+    # Defensive parsing for legacy workspaces that might just be strings
+    return [ws.get("subject_name", str(ws)) if isinstance(ws, dict) else str(ws) for ws in workspaces]
 
 @router.post("/workspaces")
 async def create_workspace(workspace: WorkspaceCreate, current_user: dict = Depends(get_current_user)):
@@ -508,12 +543,16 @@ async def get_career_history(current_user: dict = Depends(get_current_user)):
     try:
         cursor = db["saved_advice"].find({"username": current_user["username"]}).sort("timestamp", -1)
         history = await cursor.to_list(length=100)
-        # Serialize ObjectId and datetime objects for JSON
+        # 1. Defensive Parsing for legacy history items
+        sanitized_history = []
         for item in history:
-            item["_id"] = str(item["_id"])
-            if "timestamp" in item:
+            if not isinstance(item, dict):
+                continue
+            item["_id"] = str(item.get("_id", ""))
+            if "timestamp" in item and hasattr(item["timestamp"], "isoformat"):
                 item["timestamp"] = item["timestamp"].isoformat()
-        return history
+            sanitized_history.append(item)
+        return sanitized_history
     except Exception as e:
         logger.exception("Failed to fetch career history for user: %s", current_user["username"])
         raise HTTPException(status_code=500, detail="Failed to fetch career history")
