@@ -4,10 +4,28 @@ from typing import List, Dict, Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from google import genai
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception, before_sleep_log
+from google.genai import errors
+
 logger = logging.getLogger(__name__)
 
 client = genai.Client()
 
+def should_retry_embedding(exception):
+    if isinstance(exception, errors.ServerError):
+        return True
+    err_str = str(exception)
+    if "503" in err_str or "504" in err_str or "UNAVAILABLE" in err_str:
+        return True
+    return False
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=10),
+    retry=retry_if_exception(should_retry_embedding),
+    before_sleep=before_sleep_log(logger, logging.INFO),
+    reraise=True
+)
 def get_embedding(text: str):
     response = client.models.embed_content(
         model="gemini-embedding-001",
