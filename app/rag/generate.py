@@ -1,8 +1,7 @@
 import os
 import logging
 from typing import List, Dict, Any
-from google import genai
-from google.genai import types
+from groq import Groq
 
 logger = logging.getLogger(__name__)
 
@@ -12,12 +11,12 @@ Answer the user's question using ONLY the provided text context.
 If the answer isn't in the context, say "I don't know".
 """
 
-def generate_answer(query: str, retrieved_chunks: List[Dict[str, Any]], model: str = "gemini-2.5-flash") -> Dict[str, Any]:
+def generate_answer(query: str, retrieved_chunks: List[Dict[str, Any]], model: str = "llama-3.3-70b-versatile") -> Dict[str, Any]:
     """
     Takes text chunks from Pinecone, packages them up, and uses 
-    Google Gemini to generate a factual, source-grounded response.
+    Groq to generate a factual, source-grounded response.
     """
-    logger.info(f"Generating answer for query: '{query}' using Gemini model: {model}")
+    logger.info(f"Generating answer for query: '{query}' using Groq model: {model}")
     
     # 1. Glue retrieved chunks into one background note block
     context_text = ""
@@ -29,28 +28,27 @@ def generate_answer(query: str, retrieved_chunks: List[Dict[str, Any]], model: s
     user_payload = f"Context Material:\n{context_text}\n\nQuestion:\n{query}"
     
     try:
-        # 3. Initialize the Gemini developer client
-        # It automatically finds GEMINI_API_KEY inside your environment variables
-        client = genai.Client()
+        # 3. Initialize the Groq client
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         
-        # 4. Call the Gemini API model
-        response = client.models.generate_content(
+        # 4. Call the Groq chat completions API
+        response = client.chat.completions.create(
             model=model,
-            contents=user_payload,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=0.2  # Keeps it strict and factual
-            )
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_payload}
+            ],
+            temperature=0.2
         )
         
         # 5. Build clean citation mapping for output
         sources = [{"source": c["source"], "page_number": c["page_number"]} for c in retrieved_chunks]
         
         return {
-            "answer": response.text,
+            "answer": response.choices[0].message.content,
             "citations": sources
         }
         
     except Exception as e:
-        logger.error(f"Gemini API call failed: {str(e)}")
+        logger.error(f"Groq API call failed: {str(e)}")
         raise e

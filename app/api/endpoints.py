@@ -14,7 +14,7 @@ import jwt
 import bcrypt
 
 # --- EXPLICIT LOGIC IMPORTS ---
-from google import genai
+from groq import Groq
 from app.etl.extract import extract_text_from_pdf  
 from app.etl.transform import transform_data       
 from app.etl.load import load_to_pinecone        
@@ -297,10 +297,10 @@ async def generate_revision_notes(request: NotesGenerationRequest, current_user:
     try:
         res_obj = generate_answer(prompt, notes_context)
         markdown_output = res_obj.get("answer", "") if isinstance(res_obj, dict) else str(res_obj)
-        logger.info("Successfully generated notes from Gemini.")
+        logger.info("Successfully generated notes from Groq.")
     except Exception as e:
         err_str = str(e)
-        logger.error(f"Gemini generation failed for notes: {err_str}")
+        logger.error(f"Groq generation failed for notes: {err_str}")
         if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
             logger.warning("Caught 429 Rate Limit - applying mock markdown fallback.")
             markdown_output = fallback_markdown
@@ -337,27 +337,52 @@ async def generate_study_plan(request: StudyPlanRequest, current_user: dict = De
         f"Format your output beautifully using standard Markdown headers, daily lists, and clear bullet goals based on this syllabus context: {study_context}"
     )
     
-    fallback_plan = (
-        f"### {request.days_remaining}-Day Mock Preparation Schedule for {request.subject}\n"
-        "*(Note: LLM quota exhausted. Displaying static mock schedule.)*\n\n"
-        "**Day 1:** Review ER Diagrams & Relational Models (3 Hours)\n"
-        "**Day 2:** Practice SQL Queries and Joins (3 Hours)\n"
-        "**Day 3:** Master Normalization forms (1NF-BCNF) (3 Hours)\n"
-        "**Day 4:** Understand ACID Properties & Transactions (3 Hours)\n"
-        "**Day 5:** Learn Concurrency Control & Deadlocks (3 Hours)\n"
-        "**Day 6:** Solve Previous Year Questions (PYQs) (3 Hours)\n"
-        "**Day 7:** Full Syllabus Mock Test and Revision (3 Hours)\n"
-    )
+    if request.subject.lower() == "biology":
+        fallback_plan = (
+            f"### {request.days_remaining}-Day Mock Preparation Schedule for {request.subject}\n"
+            "*(Note: LLM quota exhausted. Displaying static mock schedule.)*\n\n"
+            "**Day 1:** Cell Structure & Organelles (3 Hours)\n"
+            "**Day 2:** Plant vs Animal Cell Processes (3 Hours)\n"
+            "**Day 3:** Genetics & DNA Replication (3 Hours)\n"
+            "**Day 4:** Human Anatomy & Physiology (3 Hours)\n"
+            "**Day 5:** Evolution & Natural Selection (3 Hours)\n"
+            "**Day 6:** Solve Previous Year Questions (PYQs) (3 Hours)\n"
+            "**Day 7:** Full Syllabus Mock Test and Revision (3 Hours)\n"
+        )
+    elif request.subject.lower() == "afl":
+        fallback_plan = (
+            f"### {request.days_remaining}-Day Mock Preparation Schedule for {request.subject}\n"
+            "*(Note: LLM quota exhausted. Displaying static mock schedule.)*\n\n"
+            "**Day 1:** Automata Rules & Finite State Machines (3 Hours)\n"
+            "**Day 2:** Regular Expressions and Languages (3 Hours)\n"
+            "**Day 3:** Context-Free Grammars (3 Hours)\n"
+            "**Day 4:** Pushdown Automata (3 Hours)\n"
+            "**Day 5:** Turing Machines & Decidability (3 Hours)\n"
+            "**Day 6:** Solve Previous Year Questions (PYQs) (3 Hours)\n"
+            "**Day 7:** Full Syllabus Mock Test and Revision (3 Hours)\n"
+        )
+    else:
+        fallback_plan = (
+            f"### {request.days_remaining}-Day Mock Preparation Schedule for {request.subject}\n"
+            "*(Note: LLM quota exhausted. Displaying static mock schedule.)*\n\n"
+            "**Day 1:** Review ER Diagrams & Relational Models (3 Hours)\n"
+            "**Day 2:** Practice SQL Queries and Joins (3 Hours)\n"
+            "**Day 3:** Master Normalization forms (1NF-BCNF) (3 Hours)\n"
+            "**Day 4:** Understand ACID Properties & Transactions (3 Hours)\n"
+            "**Day 5:** Learn Concurrency Control & Deadlocks (3 Hours)\n"
+            "**Day 6:** Solve Previous Year Questions (PYQs) (3 Hours)\n"
+            "**Day 7:** Full Syllabus Mock Test and Revision (3 Hours)\n"
+        )
     
     try:
         res_obj = generate_answer(prompt, study_context)
         plan_output = res_obj.get("answer", "") if isinstance(res_obj, dict) else str(res_obj)
-        logger.info("Successfully compiled study plan from Gemini.")
+        logger.info("Successfully compiled study plan from Groq.")
     except Exception as e:
         err_str = str(e)
-        logger.error(f"Gemini generation failed for study plan: {err_str}")
-        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-            logger.warning("Caught 429 Rate Limit - applying mock schedule fallback.")
+        logger.error(f"Groq generation failed for study plan: {err_str}")
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "rate limit" in err_str.lower():
+            logger.warning("Caught Rate Limit - applying mock schedule fallback.")
             plan_output = fallback_plan
         else:
             plan_output = fallback_plan
@@ -424,18 +449,18 @@ async def generate_career_advice(request: AdvisorRequest, current_user: dict = D
     )
     
     try:
-        client = genai.Client()
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
         )
-        advice_output = response.text
-        logger.info("Successfully generated career advice from direct Gemini connection.")
+        advice_output = response.choices[0].message.content
+        logger.info("Successfully generated career advice from direct Groq connection.")
     except Exception as e:
         err_str = str(e)
-        logger.exception("Gemini Advisor API call failed")
-        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-            logger.warning("Caught 429 Rate Limit - applying mock fallback career advice.")
+        logger.exception("Groq Advisor API call failed")
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "rate limit" in err_str.lower():
+            logger.warning("Caught Rate Limit - applying mock fallback career advice.")
             advice_output = (
                 f"### Career Roadmap for {request.field_major}\n\n"
                 "*(Note: Gemini rate limit reached. Displaying generic mock advice.)*\n\n"
