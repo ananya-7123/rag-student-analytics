@@ -7,8 +7,10 @@ import plotly.graph_objects as go
 # 1. ALWAYS FIRST: Page config must happen before any other st. command
 st.set_page_config(page_title="Student Success Analytics", layout="wide")
 
+import os
+
 # --- CONFIGURATION ---
-BACKEND_URL = "https://rag-student-analytics.onrender.com/api/v1"
+BACKEND_URL = os.getenv("BACKEND_URL", "https://rag-student-analytics.onrender.com/api/v1")
 
 # Initialize login state
 if "logged_in" not in st.session_state:
@@ -201,7 +203,7 @@ else:
         
         if st.button("Generate Scannable Summary Notes"):
             with st.spinner("Extracting context and synthesizing..."):
-                res = requests.post(f"{BACKEND_URL}/generation/notes", json={"subject": subject, "topic": target_topic})
+                res = requests.post(f"{BACKEND_URL}/generation/notes", json={"subject": subject, "topic": target_topic}, headers=headers)
                 if res.status_code == 200:
                     st.markdown("---")
                     st.markdown(res.json().get("markdown_content", ""))
@@ -218,7 +220,7 @@ else:
             
         if st.button("Compile Preparation Schedule"):
             with st.spinner("Optimizing schedule via Gemini Flash..."):
-                res = requests.post(f"{BACKEND_URL}/generation/study-plan", json={"subject": subject, "days_remaining": days, "daily_study_hours": hours})
+                res = requests.post(f"{BACKEND_URL}/generation/study-plan", json={"subject": subject, "days_remaining": days, "daily_study_hours": hours}, headers=headers)
                 if res.status_code == 200:
                     schedule_data = res.json().get("schedule", "")
                     
@@ -251,7 +253,8 @@ else:
                         "student_goal": student_goal
                     }
                     try:
-                        res = requests.post(f"{BACKEND_URL}/career/advise", json=payload)
+                        headers = {"Authorization": f"Bearer {st.session_state.auth_token}"} if st.session_state.auth_token else {}
+                        res = requests.post(f"{BACKEND_URL}/career/advise", json=payload, headers=headers)
                         if res.status_code == 200:
                             st.session_state.current_advice = res.json().get("advice", "No advice returned.")
                         else:

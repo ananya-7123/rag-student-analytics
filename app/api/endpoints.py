@@ -198,7 +198,7 @@ async def analyze_important_topics(request: TopicAnalysisRequest, current_user: 
     
     query_string = f"exam questions past papers important repeating concepts for {request.subject} pyq"
     try:
-        pyq_context = retrieve_context(query=query_string, filter={"user_id": str(current_user["_id"])})
+        pyq_context = retrieve_context(query=query_string, filter={"user_id": str(current_user["_id"]), "subject": request.subject})
     except Exception as e:
         logger.error(f"Pinecone retrieval failed: {e}")
         pyq_context = []
@@ -210,10 +210,10 @@ async def analyze_important_topics(request: TopicAnalysisRequest, current_user: 
     )
     
     fallback_topics = [
-        {"topic_name": "Database Normalization (1NF to BCNF)", "importance_score": 95, "status": "High Priority"},
-        {"topic_name": "ACID Properties & Transaction Management", "importance_score": 88, "status": "High Priority"},
-        {"topic_name": "SQL Joins and Subqueries", "importance_score": 85, "status": "Medium Priority"},
-        {"topic_name": "Concurrency Control Techniques", "importance_score": 70, "status": "Medium Priority"}
+        {"topic_name": f"Core Concepts of {request.subject}", "importance_score": 95, "status": "High Priority"},
+        {"topic_name": f"Fundamental Principles in {request.subject}", "importance_score": 88, "status": "High Priority"},
+        {"topic_name": f"Practical Applications of {request.subject}", "importance_score": 85, "status": "Medium Priority"},
+        {"topic_name": f"Advanced {request.subject} Topics", "importance_score": 70, "status": "Medium Priority"}
     ]
     
     try:
@@ -252,12 +252,12 @@ async def analyze_important_topics(request: TopicAnalysisRequest, current_user: 
 
 # --- 4. REVISION NOTES GENERATOR ---
 @router.post("/generation/notes")
-async def generate_revision_notes(request: NotesGenerationRequest):
+async def generate_revision_notes(request: NotesGenerationRequest, current_user: dict = Depends(get_current_user)):
     logger.info(f"Generating notes for topic '{request.topic}' under '{request.subject}'...")
     
     query_string = f"comprehensive textbook details explanations definitions for {request.topic} in {request.subject} notes"
     try:
-        notes_context = retrieve_context(query_string)
+        notes_context = retrieve_context(query_string, filter={"user_id": str(current_user["_id"]), "subject": request.subject})
     except Exception as e:
         logger.error(f"Pinecone retrieval failed: {e}")
         notes_context = []
@@ -296,12 +296,12 @@ async def generate_revision_notes(request: NotesGenerationRequest):
 
 # --- 5. STUDY PLANNER GENERATOR ---
 @router.post("/generation/study-plan")
-async def generate_study_plan(request: StudyPlanRequest):
+async def generate_study_plan(request: StudyPlanRequest, current_user: dict = Depends(get_current_user)):
     logger.info(f"Compiling study plan for {request.subject} ({request.days_remaining} days)...")
     
     query_string = f"syllabus modules chapters chapters layout for {request.subject} syllabus"
     try:
-        study_context = retrieve_context(query_string)
+        study_context = retrieve_context(query_string, filter={"user_id": str(current_user["_id"]), "subject": request.subject})
     except Exception as e:
         logger.error(f"Pinecone retrieval failed: {e}")
         study_context = []
@@ -364,14 +364,44 @@ async def generate_study_plan(request: StudyPlanRequest):
 
 # --- 6. CAREER ADVISOR GENERATOR ---
 @router.post("/career/advise")
-async def generate_career_advice(request: AdvisorRequest):
+async def generate_career_advice(request: AdvisorRequest, current_user: dict = Depends(get_current_user)):
     logger.info(f"Generating career advice for major '{request.field_major}'...")
     
+    # Safely handle empty user data (brand-new profiles)
+    try:
+        user_id = str(current_user.get("_id", ""))
+        username = current_user.get("username", "")
+        
+        # Initialize safe default empty structures
+        user_analytics = []
+        user_history = []
+        
+        if user_id:
+            analytics_cursor = db.subject_analytics.find({"user_id": user_id})
+            user_analytics = await analytics_cursor.to_list(length=100) or []
+            
+        if username:
+            history_cursor = db.saved_advice.find({"username": username})
+            user_history = await history_cursor.to_list(length=100) or []
+            
+    except Exception as e:
+        logger.error(f"MongoDB read error in career advisor: {e}")
+        # Fallback to safe empty structures instead of throwing database exception
+        user_analytics = []
+        user_history = []
+        
+    context_str = ""
+    if not user_analytics and not user_history:
+        context_str = "- Background: Brand-new user with no prior documents, syllabus matrices, or history stored yet."
+    else:
+        context_str = f"- Background: User has {len(user_analytics)} syllabus matrices and {len(user_history)} past history items."
+
     prompt = (
         f"You are an expert Academic and Career Advisor. Provide a highly structured, actionable roadmap and project suggestions based on the following student details:\n"
         f"- Field/Major: {request.field_major}\n"
         f"- Current Skills/Interests: {request.skills_interest}\n"
-        f"- Immediate Goal: {request.student_goal}\n\n"
+        f"- Immediate Goal: {request.student_goal}\n"
+        f"{context_str}\n\n"
         f"Keep the formatting professional, realistic, and completely emoji-free using clean markdown headers and bullet points."
     )
     
@@ -384,8 +414,25 @@ async def generate_career_advice(request: AdvisorRequest):
         advice_output = response.text
         logger.info("Successfully generated career advice from direct Gemini connection.")
     except Exception as e:
+        err_str = str(e)
         logger.exception("Gemini Advisor API call failed")
-        raise HTTPException(status_code=500, detail="Failed to fetch advice from Gemini API")
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+            logger.warning("Caught 429 Rate Limit - applying mock fallback career advice.")
+            advice_output = (
+                f"### Career Roadmap for {request.field_major}\n\n"
+                "*(Note: Gemini rate limit reached. Displaying generic mock advice.)*\n\n"
+                "**1. Core Skills to Master**\n"
+                f"- Continue developing your interests in: {request.skills_interest}\n"
+                "- Focus on fundamentals and algorithms.\n\n"
+                "**2. Portfolio Project Ideas**\n"
+                "- Build a CRUD application.\n"
+                "- Contribute to open source repositories.\n\n"
+                "**3. Next Steps**\n"
+                f"- Tailor your resume towards: {request.student_goal}\n"
+                "- Apply for entry-level internships."
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to fetch advice from Gemini API")
             
     return {
         "advice": advice_output
