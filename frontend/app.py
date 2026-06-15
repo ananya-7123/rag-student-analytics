@@ -72,6 +72,14 @@ else:
     st.title("Student Success Analytics Platform")
     st.caption("Transforming static academic documents into interactive exam preparation insights.")
 
+    with st.expander("📖 Click Here for Step-by-Step Instructions & User Guide", expanded=False):
+        st.markdown("""
+        - **📊 Coverage Dashboard & Topics**: Upload your syllabus or text resources in the sidebar, click 'Process & Index', then click 'Fetch Latest Analytics Matrix' to view high-yield exam patterns and progress percentages.
+        - **📝 Revision Workspace**: Type in any core topic name or specific question from your uploaded materials to generate structured, scannable summary study notes instantly.
+        - **📅 Tactical Study Planner**: Enter your remaining exam days and daily study hours, then click 'Compile Preparation Schedule' to generate a hyper-customized subject-aware daily study timeline.
+        - **🚀 Career & Project Hub**: Access personalized, high-speed career advice, tech stack paths, and custom coding project recommendations tailored directly to your academic major profile arrays.
+        """)
+
     # --- SIDEBAR: CONTROL HUB ---
     st.sidebar.header("Control Hub")
 
