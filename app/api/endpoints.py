@@ -1,7 +1,9 @@
 import os
 import json
 import re
+import gc
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 security = HTTPBearer()
@@ -131,62 +133,61 @@ async def upload_documents(
     files: list[SwaggerFile] = File(...),
     current_user: dict = Depends(get_current_user)
 ):
-    logger.info(f"Received upload request for {subject} ({doc_type}) with {len(files)} files.")
-    total_chunks = 0
-    temp_dir = "temp_uploads"
-    os.makedirs(temp_dir, exist_ok=True)
+    try:
+        logger.info(f"Received upload request for {subject} ({doc_type}) with {len(files)} files.")
+        total_chunks = 0
+        temp_dir = "temp_uploads"
+        os.makedirs(temp_dir, exist_ok=True)
 
-    for file in files:
-        file_path = os.path.join(temp_dir, file.filename)
-        with open(file_path, "wb") as buffer:
-            buffer.write(await file.read())
+        for file in files:
+            file_path = os.path.join(temp_dir, file.filename)
+            with open(file_path, "wb") as buffer:
+                buffer.write(await file.read())
 
-        try:
-            logger.info(f"Extracting text from {file.filename}...")
-            text = extract_text_from_pdf(file_path)
-            
-            logger.info("Transforming into chunks...")
-            chunks = transform_data(text)
-            
-            metadata_list = [
-                {"text": chunk.get("text", ""), "subject": subject, "doc_type": doc_type, "user_id": str(current_user["_id"])}
-                for chunk in chunks
-            ]
-            
-            logger.info("Loading to Pinecone...")
-            load_to_pinecone(chunks, metadata_list)
-            total_chunks += len(chunks)
-        except Exception as e:
-            logger.error(f"Failed to process {file.filename}: {e}")
-            raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
-        finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            try:
+                logger.info(f"Extracting text from {file.filename}...")
+                text = extract_text_from_pdf(file_path)
                 
-        # 3. Isolate Upload Failures for Existing User Arrays
-        try:
-            user_doc = await db["users"].find_one({"_id": current_user["_id"]})
-            if user_doc:
-                existing_docs = user_doc.get("documents", [])
-                if not isinstance(existing_docs, list):
-                    existing_docs = []
+                logger.info("Transforming into chunks...")
+                chunks = transform_data(text)
                 
+                metadata_list = [
+                    {"text": chunk.get("text", ""), "subject": subject, "doc_type": doc_type, "user_id": str(current_user["_id"])}
+                    for chunk in chunks
+                ]
+                
+                logger.info("Loading to Pinecone...")
+                load_to_pinecone(chunks, metadata_list)
+                total_chunks += len(chunks)
+            except Exception as e:
+                logger.error(f"Failed to process {file.filename}: {e}")
+                raise Exception(f"Pipeline error for {file.filename}: {str(e)}")
+            finally:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    
+            # 3. Isolate Upload Failures for Existing User Arrays using safe $push
+            try:
                 new_doc_ref = {"filename": file.filename, "subject": subject, "doc_type": doc_type, "chunks": total_chunks}
-                existing_docs.append(new_doc_ref)
-                
                 await db["users"].update_one(
                     {"_id": current_user["_id"]},
-                    {"$set": {"documents": existing_docs}}
+                    {"$push": {"documents": new_doc_ref}}
                 )
-        except Exception as db_err:
-            logger.warning(f"Failed to append to user documents array (ignoring to prevent upload failure): {db_err}")
+            except Exception as db_err:
+                logger.warning(f"Failed to append to user documents array (ignoring to prevent upload failure): {db_err}")
+                
+            # 2. Implement Cloud Memory Management
+            gc.collect()
 
-    logger.info(f"Successfully processed {len(files)} files. Total chunks indexed: {total_chunks}")
-    return {
-        "status": "success",
-        "message": f"Successfully processed {len(files)} files for {subject}",
-        "chunks_indexed": total_chunks
-    }
+        logger.info(f"Successfully processed {len(files)} files. Total chunks indexed: {total_chunks}")
+        return {
+            "status": "success",
+            "message": f"Successfully processed {len(files)} files for {subject}",
+            "chunks_indexed": total_chunks
+        }
+    except Exception as route_err:
+        logger.error(f"Upload route failed: {route_err}")
+        return JSONResponse(status_code=400, content={"error": str(route_err)})
 
 # --- 2. COVERAGE DASHBOARD ANALYTICS ---
 @router.get("/analytics/coverage/{subject}")
